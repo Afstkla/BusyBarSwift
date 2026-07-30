@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test (macOS)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show Swift version
+        run: swift --version
+      - name: Build
+        run: swift build -v
+      - name: Test
+        run: swift test -v
+
+  example:
+    name: Build example app
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build BusyBarDemo
+        working-directory: Examples/BusyBarDemo
+        run: swift build -v
+
+  platforms:
+    name: Build for ${{ matrix.destination.name }}
+    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        destination:
+          - name: iOS
+            value: generic/platform=iOS
+          - name: tvOS
+            value: generic/platform=tvOS
+          - name: watchOS
+            value: generic/platform=watchOS
+          - name: visionOS
+            value: generic/platform=visionOS
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          xcodebuild build \
+            -scheme BusyBar \
+            -destination '${{ matrix.destination.value }}' \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO

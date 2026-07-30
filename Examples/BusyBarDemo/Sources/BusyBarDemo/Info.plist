@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>app.busy.BusyBarDemo</string>
+	<key>CFBundleName</key>
+	<string>BUSY Bar Demo</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Connects to your BUSY Bar over Bluetooth to read its status and control the display.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Finds BUSY Bars on your network when Bluetooth is unavailable.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_busybar._tcp</string>
+	</array>
+</dict>
+</plist>

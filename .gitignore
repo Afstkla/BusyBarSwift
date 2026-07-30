@@ -1,0 +1,9 @@
+.env
+.build/
+.swiftpm/
+.index-build/
+*.xcodeproj
+*.xcworkspace
+DerivedData/
+.DS_Store
+Package.resolved
