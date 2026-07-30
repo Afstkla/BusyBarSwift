@@ -129,6 +129,32 @@ struct EncodingTests {
         }
     }
 
+    @Test("Anchors land where the name says on the 72×16 front display")
+    func placesAnchors() {
+        #expect(Align.topLeft.anchor(on: .front) == (0, 0))
+        #expect(Align.center.anchor(on: .front) == (36, 8))
+        #expect(Align.bottomRight.anchor(on: .front) == (72, 16))
+        #expect(Align.topMid.anchor(on: .front) == (36, 0))
+        #expect(Align.midLeft.anchor(on: .front) == (0, 8))
+        #expect(Align.center.anchor(on: .back) == (20, 20))
+    }
+
+    @Test("Centred text is positioned at the middle, not hung off the corner")
+    func centresText() async throws {
+        let transport = FakeTransport()
+        let client = BusyBarClient(transport: transport, applicationName: "demo")
+
+        try await client.draw(text: "Hello")
+
+        let body = try #require(await transport.requests.first?.body)
+        let object = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let element = try #require((object["elements"] as? [[String: Any]])?.first)
+
+        #expect(element["align"] as? String == "center")
+        #expect(element["x"] as? Int == 36)
+        #expect(element["y"] as? Int == 8)
+    }
+
     @Test("Colours parse from every hex shorthand")
     func parsesColours() throws {
         #expect(BusyColor(hex: "#FF0000FF")?.hexString == "#FF0000FF")

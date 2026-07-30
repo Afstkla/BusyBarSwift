@@ -189,6 +189,7 @@ private struct ControlPanel: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 StatusHeader(bar: bar)
+                ScreenPreview(bar: bar)
 
                 GroupBox("Draw") {
                     VStack(alignment: .leading, spacing: 10) {
@@ -293,6 +294,67 @@ private struct ControlPanel: View {
 
     private var fonts: [BusyFont] {
         [.tiny, .small, .normal, .condensed, .bold, .large, .extraLarge]
+    }
+}
+
+/// Shows what is actually on the bar, which is the only way to tell a draw really landed.
+private struct ScreenPreview: View {
+    let bar: BarController
+
+    var body: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 12) {
+                Panel(title: "Front · 72×16", frame: bar.frontFrame, scale: 5)
+                Panel(title: "Back · 40×40", frame: bar.backFrame, scale: 2)
+            }
+            .padding(8)
+        } label: {
+            HStack {
+                Text("Screen").font(.headline)
+                Spacer()
+                Toggle("Live", isOn: Binding(
+                    get: { bar.isMirroring },
+                    set: { _ in bar.toggleMirroring() }
+                ))
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                Button("Capture") { Task { await bar.captureScreens() } }
+                    .controlSize(.small)
+            }
+        }
+        .task { await bar.captureScreens() }
+    }
+
+    private struct Panel: View {
+        let title: String
+        let frame: ScreenFrame?
+        let scale: CGFloat
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.caption2).foregroundStyle(.secondary)
+                Group {
+                    if let image = frame?.makeImage() {
+                        Image(decorative: image, scale: 1)
+                            .interpolation(.none)
+                            .resizable()
+                            .frame(
+                                width: CGFloat(frame!.width) * scale,
+                                height: CGFloat(frame!.height) * scale
+                            )
+                    } else {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(.black)
+                            .frame(width: 72 * scale, height: 16 * scale)
+                            .overlay(Text("no frame").font(.caption2).foregroundStyle(.secondary))
+                    }
+                }
+                .clipShape(.rect(cornerRadius: 4))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4).strokeBorder(.secondary.opacity(0.3))
+                )
+            }
+        }
     }
 }
 

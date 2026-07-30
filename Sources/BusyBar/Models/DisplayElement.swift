@@ -10,6 +10,49 @@ public enum Screen: String, Sendable, Codable {
         case .back: 1
         }
     }
+
+    public var pixelWidth: Int {
+        switch self {
+        case .front: 72
+        case .back: 40
+        }
+    }
+
+    // ponytail: both sizes are measured from the frames /screen returns — the front is certain
+    // (3456 bytes = 72x16 RGB), the back inferred (6400 bytes = 1600 pixels RGBA). Correct these
+    // if a device ever reports otherwise.
+    public var pixelHeight: Int {
+        switch self {
+        case .front: 16
+        case .back: 40
+        }
+    }
+}
+
+extension Align {
+    /// Where this anchor sits on `screen`.
+    ///
+    /// `align` only names *which point of the element* is being positioned; `x`/`y` still decide
+    /// where that point lands, and both default to zero. Centring something therefore means
+    /// asking for the centre anchor *and* putting it at the middle of the display.
+    public func anchor(on screen: Screen) -> (x: Int, y: Int) {
+        let width = screen.pixelWidth
+        let height = screen.pixelHeight
+
+        let x = switch self {
+        case .topLeft, .midLeft, .bottomLeft: 0
+        case .topMid, .center, .bottomMid: width / 2
+        case .topRight, .midRight, .bottomRight: width
+        }
+
+        let y = switch self {
+        case .topLeft, .topMid, .topRight: 0
+        case .midLeft, .center, .midRight: height / 2
+        case .bottomLeft, .bottomMid, .bottomRight: height
+        }
+
+        return (x, y)
+    }
 }
 
 public enum Align: String, Sendable, Codable {

@@ -20,6 +20,9 @@ final class BarController {
     var brightness: Brightness = .auto
     var volume: Double = 50
     var lastError: String?
+    var frontFrame: ScreenFrame?
+    var backFrame: ScreenFrame?
+    var isMirroring = false
 
     private var client: BusyBarClient?
     private var refreshTask: Task<Void, Never>?
@@ -91,10 +94,21 @@ final class BarController {
     private func startRefreshing() {
         refreshTask?.cancel()
         refreshTask = Task { [weak self] in
+            var tick = 0
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(5))
-                guard let self, !Task.isCancelled else { return }
-                self.status = try? await self.client?.status()
+                guard let self else { return }
+                let mirroring = self.isMirroring
+                try? await Task.sleep(for: .milliseconds(mirroring ? 700 : 5000))
+                guard !Task.isCancelled else { return }
+
+                if mirroring {
+                    await self.captureScreens()
+                    tick += 1
+                }
+                // Status moves slowly; don't refetch it on every mirror frame.
+                if !mirroring || tick % 7 == 0 {
+                    self.status = try? await self.client?.status()
+                }
             }
         }
     }
@@ -130,10 +144,27 @@ final class BarController {
 
     func draw(text: String, color: BusyColor, font: BusyFont, screen: Screen) async {
         await run { try await $0.draw(text: text, font: font, color: color, display: screen) }
+        await captureScreens()
     }
 
     func clear() async {
         await run { try await $0.clearDisplay() }
+        await captureScreens()
+    }
+
+    /// Pulls a frame from both displays. `/screen` is a single capture, not a stream, so
+    /// mirroring means asking again on a timer.
+    func captureScreens() async {
+        guard let client else { return }
+        async let front = try? client.screenshot(of: .front)
+        async let back = try? client.screenshot(of: .back)
+        frontFrame = await front
+        backFrame = await back
+    }
+
+    func toggleMirroring() {
+        isMirroring.toggle()
+        startRefreshing()
     }
 
     func setBrightness(_ value: Brightness) async {
