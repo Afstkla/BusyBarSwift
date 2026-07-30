@@ -304,8 +304,8 @@ private struct ScreenPreview: View {
     var body: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 12) {
-                Panel(title: "Front · 72×16", frame: bar.frontFrame, scale: 5)
-                Panel(title: "Back · 40×40", frame: bar.backFrame, scale: 2)
+                Panel(title: "Front · 72×16 colour", frame: bar.frontFrame, scale: 5)
+                Panel(title: "Back · 80×80 greyscale", frame: bar.backFrame, scale: 2)
             }
             .padding(8)
         } label: {

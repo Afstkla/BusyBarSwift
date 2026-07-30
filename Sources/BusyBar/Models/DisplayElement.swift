@@ -14,17 +14,25 @@ public enum Screen: String, Sendable, Codable {
     public var pixelWidth: Int {
         switch self {
         case .front: 72
-        case .back: 40
+        case .back: 80
         }
     }
 
-    // ponytail: both sizes are measured from the frames /screen returns — the front is certain
-    // (3456 bytes = 72x16 RGB), the back inferred (6400 bytes = 1600 pixels RGBA). Correct these
-    // if a device ever reports otherwise.
     public var pixelHeight: Int {
         switch self {
         case .front: 16
-        case .back: 40
+        case .back: 80
+        }
+    }
+
+    /// The front panel is full colour; the back is greyscale.
+    ///
+    /// Both were measured by drawing a single pixel at a known coordinate and reading back
+    /// where it landed in the frame `/screen` returns.
+    public var bytesPerPixel: Int {
+        switch self {
+        case .front: 3
+        case .back: 1
         }
     }
 }
