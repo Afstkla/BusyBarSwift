@@ -9,6 +9,7 @@ import Foundation
 final class BLELink: NSObject, @unchecked Sendable {
     private let queue = DispatchQueue(label: "app.busy.ble-link")
     private let responseTimeout: TimeInterval
+    private let connectTimeout: TimeInterval
 
     private var central: CBCentralManager!
     private var peripheral: CBPeripheral?
@@ -18,11 +19,23 @@ final class BLELink: NSObject, @unchecked Sendable {
 
     private var powerOnWaiters: [CheckedContinuation<Void, Error>] = []
     private var connectWaiter: CheckedContinuation<Void, Error>?
+    private var connectTimeoutItem: DispatchWorkItem?
+    private var phase: Phase = .idle
+
     private var discovered: [(peripheral: CBPeripheral, name: String, rssi: Int)] = []
     private var seen: Set<UUID> = []
     private var scanWaiter: CheckedContinuation<[DiscoveredBar], Error>?
 
     private var exchange: Exchange?
+
+    /// Named so a stalled connection says where it stalled instead of just timing out.
+    private enum Phase: String {
+        case idle = "idle"
+        case linking = "opening the Bluetooth connection"
+        case discoveringServices = "looking for the UART service"
+        case discoveringCharacteristics = "looking for the UART characteristics"
+        case subscribing = "subscribing to responses"
+    }
 
     private struct Exchange {
         var buffer = Data()
@@ -31,8 +44,9 @@ final class BLELink: NSObject, @unchecked Sendable {
         let timeoutItem: DispatchWorkItem
     }
 
-    init(responseTimeout: TimeInterval) {
+    init(responseTimeout: TimeInterval, connectTimeout: TimeInterval = 20) {
         self.responseTimeout = responseTimeout
+        self.connectTimeout = connectTimeout
         super.init()
         central = CBCentralManager(delegate: self, queue: queue)
     }
@@ -132,6 +146,20 @@ final class BLELink: NSObject, @unchecked Sendable {
         connectWaiter = waiter
         self.peripheral = peripheral
         peripheral.delegate = self
+        phase = .linking
+
+        // CoreBluetooth's connect never times out on its own, and a bar that wants pairing
+        // can sit here indefinitely. Bound it so the caller gets an answer either way.
+        let timeout = DispatchWorkItem { [weak self] in
+            guard let self, let stalled = self.peripheral else { return }
+            self.central.cancelPeripheralConnection(stalled)
+            self.finishConnecting(with: .failure(BusyBarError.connectionStalled(
+                phase: self.phase.rawValue
+            )))
+        }
+        connectTimeoutItem = timeout
+        queue.asyncAfter(deadline: .now() + connectTimeout, execute: timeout)
+
         central.connect(peripheral)
     }
 
@@ -221,6 +249,9 @@ final class BLELink: NSObject, @unchecked Sendable {
     }
 
     private func finishConnecting(with result: Result<Void, Error>) {
+        connectTimeoutItem?.cancel()
+        connectTimeoutItem = nil
+        phase = .idle
         guard let waiter = connectWaiter else { return }
         connectWaiter = nil
         waiter.resume(with: result)
@@ -253,6 +284,7 @@ extension BLELink: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        phase = .discoveringServices
         peripheral.discoverServices([BLEIdentifiers.uartService])
     }
 
@@ -291,6 +323,7 @@ extension BLELink: CBPeripheralDelegate {
             )))
             return
         }
+        phase = .discoveringCharacteristics
         peripheral.discoverCharacteristics(
             [
                 BLEIdentifiers.rxCharacteristic,
@@ -326,6 +359,7 @@ extension BLELink: CBPeripheralDelegate {
             )))
             return
         }
+        phase = .subscribing
         peripheral.setNotifyValue(true, for: tx)
     }
 

@@ -8,6 +8,7 @@ public enum BusyBarError: Error, Sendable {
     case deviceNotFound
     case notConnected
     case requestInFlight
+    case connectionStalled(phase: String)
     case timedOut
     case allTransportsFailed([Error])
 }
@@ -30,6 +31,14 @@ extension BusyBarError: LocalizedError {
             return "Not connected to a BUSY Bar."
         case .requestInFlight:
             return "Another request is already on the wire."
+        case let .connectionStalled(phase):
+            return """
+                The BUSY Bar stopped responding while \(phase). \
+                It is almost certainly already paired with another device: once bonded, the \
+                firmware advertises to that peer only and silently ignores everyone else's \
+                connection attempts. Clear the pairing on the bar itself (Settings › Bluetooth), \
+                or call forgetBLEPairing() over USB or Wi-Fi, then try again.
+                """
         case .timedOut:
             return "The BUSY Bar did not respond in time."
         case let .allTransportsFailed(errors):

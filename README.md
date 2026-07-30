@@ -151,6 +151,30 @@ swift run
 
 It's a separate package, so it never enters the library's dependency graph.
 
+## Troubleshooting Bluetooth
+
+**The bar shows up in a scan but connecting hangs, then reports a stalled connection.**
+
+It's already bonded to another device — typically a phone running the official app. Once the
+firmware has a bonded peer it puts that peer on a hardware acceptlist and advertises with
+filter policy `ALLOW_PAIRED`, which drops both scan requests and connection requests from
+anyone else. It keeps broadcasting, so it still appears in a scan; it just never answers you.
+
+Clear the pairing on the bar (Settings › Bluetooth), or over USB/Wi-Fi:
+
+```swift
+try await BusyBarClient.at("10.0.4.20").forgetBLEPairing()
+```
+
+A related tell: if a discovered bar's name comes back as the generic `BUSY Bar`, no scan
+response arrived — the same filter policy is why.
+
+**Nothing is found at all.** BLE is switched off at the device. Turn it on from its menu, or
+`try await bar.enableBLE()` over USB or Wi-Fi.
+
+**No network route appears.** The bar is only on the network when it's on Wi-Fi or plugged in
+over USB — the latter gives it `10.0.4.20`. Check with `ping 10.0.4.20`.
+
 ## Not implemented
 
 `/api/status/ws` — the live status and screen-mirroring stream. Its frames are protobuf, which

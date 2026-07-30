@@ -10,9 +10,21 @@ struct ContentView: View {
             DiscoverySidebar(bar: bar, accessKey: $accessKey)
                 .navigationSplitViewColumnWidth(min: 240, ideal: 260)
         } detail: {
-            if case .connected = bar.connection {
+            switch bar.connection {
+            case .connected:
                 ControlPanel(bar: bar)
-            } else {
+            case .connecting:
+                VStack(spacing: 12) {
+                    ProgressView()
+                    Text("Connecting…")
+                        .foregroundStyle(.secondary)
+                    Text("If the bar has not been paired with this Mac before, accept the pairing request.")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 320)
+                }
+            case .disconnected:
                 ContentUnavailableView(
                     "No bar connected",
                     systemImage: "rectangle.on.rectangle.slash",
@@ -22,13 +34,25 @@ struct ContentView: View {
         }
         .overlay(alignment: .bottom) {
             if let error = bar.lastError {
-                Text(error)
-                    .font(.callout)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(.red.opacity(0.15), in: .rect(cornerRadius: 8))
-                    .padding()
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text(error)
+                        .font(.callout)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button {
+                        bar.lastError = nil
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .buttonStyle(.borderless)
+                }
+                .padding(12)
+                .frame(maxWidth: 520, alignment: .leading)
+                .background(.red.opacity(0.15), in: .rect(cornerRadius: 8))
+                .padding()
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .animation(.default, value: bar.lastError)
