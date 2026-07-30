@@ -7,6 +7,10 @@ import Foundation
 /// Every mutable property is touched only on `queue`, which is what makes the
 /// `@unchecked Sendable` conformance sound.
 final class BLELink: NSObject, @unchecked Sendable {
+    /// `NORDIC_UART_INITIAL_DATA_SIZE` in the firmware — the most the RX and TX
+    /// characteristics carry in one attribute operation.
+    static let maximumAttributeLength = 237
+
     private let queue = DispatchQueue(label: "app.busy.ble-link")
     private let responseTimeout: TimeInterval
     private let connectTimeout: TimeInterval
@@ -20,6 +24,8 @@ final class BLELink: NSObject, @unchecked Sendable {
     private var powerOnWaiters: [CheckedContinuation<Void, Error>] = []
     private var connectWaiter: CheckedContinuation<Void, Error>?
     private var connectTimeoutItem: DispatchWorkItem?
+    private var connectTarget: UUID?
+    private var isSeekingTarget = false
     private var phase: Phase = .idle
 
     private var discovered: [(peripheral: CBPeripheral, name: String, rssi: Int)] = []
@@ -27,10 +33,12 @@ final class BLELink: NSObject, @unchecked Sendable {
     private var scanWaiter: CheckedContinuation<[DiscoveredBar], Error>?
 
     private var exchange: Exchange?
+    private var outgoing: [Data] = []
 
     /// Named so a stalled connection says where it stalled instead of just timing out.
     private enum Phase: String {
         case idle = "idle"
+        case searching = "looking for the bar"
         case linking = "opening the Bluetooth connection"
         case discoveringServices = "looking for the UART service"
         case discoveringCharacteristics = "looking for the UART characteristics"
@@ -73,30 +81,38 @@ final class BLELink: NSObject, @unchecked Sendable {
         }
     }
 
-    /// Idempotent: returns immediately when the UART characteristics are already live.
+    /// Connects to a bar, or returns straight away when the UART characteristics are live.
+    ///
+    /// The bar advertises in bursts rather than continuously, and CoreBluetooth's `connect`
+    /// waits forever for a peripheral it never sees again. So this connects the moment a
+    /// match is discovered instead of scanning for a whole window first and connecting to a
+    /// peripheral that has since gone quiet.
     func connect(to id: UUID?, scanDuration: TimeInterval) async throws {
         if await isReady() { return }
         try await waitForPowerOn()
 
-        // A known peripheral can be fetched straight from CoreBluetooth's cache, which skips
-        // the whole scan window.
-        if let id, let known = await retrieve(id) {
-            try await openUART(with: known)
-            return
-        }
-
-        _ = try await scan(duration: scanDuration)
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             queue.async {
-                let match =
-                    id.flatMap { wanted in self.discovered.first { $0.peripheral.identifier == wanted } }
-                    ?? self.discovered.max { $0.rssi < $1.rssi }
-
-                guard let match else {
-                    continuation.resume(throwing: BusyBarError.deviceNotFound)
+                guard self.connectWaiter == nil else {
+                    continuation.resume(throwing: BusyBarError.requestInFlight)
                     return
                 }
-                self.beginConnecting(to: match.peripheral, waiter: continuation)
+                self.connectWaiter = continuation
+                self.connectTarget = id
+                self.isSeekingTarget = true
+                self.discovered = []
+                self.seen = []
+                self.phase = .searching
+                self.central.scanForPeripherals(withServices: [BLEIdentifiers.advertisedService])
+
+                let giveUp = DispatchWorkItem { [weak self] in
+                    guard let self, self.isSeekingTarget else { return }
+                    self.isSeekingTarget = false
+                    self.central.stopScan()
+                    self.finishConnecting(with: .failure(BusyBarError.deviceNotFound))
+                }
+                self.connectTimeoutItem = giveUp
+                self.queue.asyncAfter(deadline: .now() + scanDuration, execute: giveUp)
             }
         }
     }
@@ -123,27 +139,7 @@ final class BLELink: NSObject, @unchecked Sendable {
         }
     }
 
-    private func retrieve(_ id: UUID) async -> CBPeripheral? {
-        await withCheckedContinuation { continuation in
-            queue.async {
-                continuation.resume(
-                    returning: self.central.retrievePeripherals(withIdentifiers: [id]).first
-                )
-            }
-        }
-    }
-
-    private func openUART(with peripheral: CBPeripheral) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            queue.async { self.beginConnecting(to: peripheral, waiter: continuation) }
-        }
-    }
-
-    private func beginConnecting(
-        to peripheral: CBPeripheral,
-        waiter: CheckedContinuation<Void, Error>
-    ) {
-        connectWaiter = waiter
+    private func beginConnecting(to peripheral: CBPeripheral) {
         self.peripheral = peripheral
         peripheral.delegate = self
         phase = .linking
@@ -224,10 +220,16 @@ final class BLELink: NSObject, @unchecked Sendable {
                 )
                 self.queue.asyncAfter(deadline: .now() + self.responseTimeout, execute: timeoutItem)
 
-                let limit = peripheral.maximumWriteValueLength(for: .withResponse)
-                for chunk in payload.chunks(of: limit) {
-                    peripheral.writeValue(chunk, for: rx, type: .withResponse)
-                }
+                // CoreBluetooth allows a write as large as the negotiated MTU, commonly 512,
+                // but the firmware's RX attribute is only NORDIC_UART_INITIAL_DATA_SIZE bytes.
+                // A larger write is refused outright, which is why short GETs used to work and
+                // anything carrying a JSON body did not.
+                let limit = min(
+                    peripheral.maximumWriteValueLength(for: .withResponse),
+                    BLELink.maximumAttributeLength
+                )
+                self.outgoing = payload.chunks(of: limit)
+                self.writeNextChunk()
             }
         }
     }
@@ -276,11 +278,22 @@ extension BLELink: CBCentralManagerDelegate {
         advertisementData: [String: Any],
         rssi RSSI: NSNumber
     ) {
-        guard seen.insert(peripheral.identifier).inserted else { return }
         let name = (advertisementData[CBAdvertisementDataLocalNameKey] as? String)
             ?? peripheral.name
             ?? "BUSY Bar"
-        discovered.append((peripheral: peripheral, name: name, rssi: RSSI.intValue))
+
+        if seen.insert(peripheral.identifier).inserted {
+            discovered.append((peripheral: peripheral, name: name, rssi: RSSI.intValue))
+        }
+
+        // The bar advertises in bursts, so grab it while it is still talking.
+        guard isSeekingTarget, connectTarget == nil || connectTarget == peripheral.identifier
+        else { return }
+
+        isSeekingTarget = false
+        connectTimeoutItem?.cancel()
+        central.stopScan()
+        beginConnecting(to: peripheral)
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
@@ -377,8 +390,20 @@ extension BLELink: CBPeripheralDelegate {
         didWriteValueFor characteristic: CBCharacteristic,
         error: Error?
     ) {
-        guard characteristic.uuid == BLEIdentifiers.rxCharacteristic, let error else { return }
-        finishExchange(with: .failure(error))
+        guard characteristic.uuid == BLEIdentifiers.rxCharacteristic else { return }
+        if let error {
+            outgoing = []
+            finishExchange(with: .failure(error))
+            return
+        }
+        writeNextChunk()
+    }
+
+    /// One chunk in flight at a time. Firing them all at once outruns the firmware's repeater,
+    /// which hands each write to a single loopback socket before accepting the next.
+    private func writeNextChunk() {
+        guard let peripheral, let rx, !outgoing.isEmpty else { return }
+        peripheral.writeValue(outgoing.removeFirst(), for: rx, type: .withResponse)
     }
 
     func peripheral(

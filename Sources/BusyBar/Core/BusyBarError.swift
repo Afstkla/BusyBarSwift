@@ -33,11 +33,9 @@ extension BusyBarError: LocalizedError {
             return "Another request is already on the wire."
         case let .connectionStalled(phase):
             return """
-                The BUSY Bar stopped responding while \(phase). \
-                It is almost certainly already paired with another device: once bonded, the \
-                firmware advertises to that peer only and silently ignores everyone else's \
-                connection attempts. Clear the pairing on the bar itself (Settings › Bluetooth), \
-                or call forgetBLEPairing() over USB or Wi-Fi, then try again.
+                The BUSY Bar stopped responding while \(phase). It advertises in bursts, so \
+                this often clears on a retry. If it persists, the bar may be bonded to another \
+                device or connected to one already — it accepts a single central at a time.
                 """
         case .timedOut:
             return "The BUSY Bar did not respond in time."
