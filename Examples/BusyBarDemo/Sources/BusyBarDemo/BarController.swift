@@ -33,22 +33,44 @@ final class BarController {
     }
 
     func connect(to device: DiscoveredDevice, accessKey: String?) async {
-        connection = .connecting
-        lastError = nil
-
         // A bar reachable both ways gets its network entry as the backstop for Bluetooth.
         let fallback = device.isBluetooth ? candidates.first(where: { !$0.isBluetooth }) : nil
 
-        client = BusyBarClient.connect(
-            to: device,
-            fallback: fallback,
-            accessKey: accessKey?.isEmpty == false ? accessKey : nil,
-            applicationName: "swift_demo"
+        await activate(
+            BusyBarClient.connect(
+                to: device,
+                fallback: fallback,
+                accessKey: accessKey.presence,
+                applicationName: "swift_demo"
+            ),
+            via: device.routeDescription
         )
+    }
+
+    /// Connects straight to an address, skipping discovery.
+    func connect(toHost host: String, accessKey: String?) async {
+        await activate(
+            BusyBarClient.at(host, accessKey: accessKey.presence, applicationName: "swift_demo"),
+            via: "HTTP · \(host)"
+        )
+    }
+
+    /// Reaches the bar through BUSY Cloud, wherever it is.
+    func connectToCloud(token: String) async {
+        await activate(
+            BusyBarClient.cloud(token: token, applicationName: "swift_demo"),
+            via: "BUSY Cloud"
+        )
+    }
+
+    private func activate(_ candidate: BusyBarClient, via route: String) async {
+        connection = .connecting
+        lastError = nil
+        client = candidate
 
         do {
             try await loadEverything()
-            connection = .connected(via: device.routeDescription)
+            connection = .connected(via: route)
             startRefreshing()
         } catch {
             client = nil
@@ -130,5 +152,15 @@ final class BarController {
 
     func rename(to name: String) async {
         await run { try await $0.setName(name) }
+    }
+}
+
+extension Optional where Wrapped == String {
+    /// The string, unless it's absent or blank.
+    var presence: String? {
+        guard let trimmed = self?.trimmingCharacters(in: .whitespaces), !trimmed.isEmpty else {
+            return nil
+        }
+        return trimmed
     }
 }

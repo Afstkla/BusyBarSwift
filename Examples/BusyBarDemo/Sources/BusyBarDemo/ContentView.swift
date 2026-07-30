@@ -109,6 +109,9 @@ private struct DiscoverySidebar: View {
                     .textFieldStyle(.roundedBorder)
             }
 
+            Divider()
+            ManualConnect(bar: bar, accessKey: accessKey)
+
             if case let .connected(via) = bar.connection {
                 Divider()
                 Label("Connected over \(via)", systemImage: "checkmark.circle.fill")
@@ -119,6 +122,53 @@ private struct DiscoverySidebar: View {
             }
         }
         .padding(12)
+    }
+}
+
+/// Discovery only finds a bar on the same network. These two routes reach one that isn't.
+private struct ManualConnect: View {
+    let bar: BarController
+    let accessKey: String
+
+    private enum Route: String, CaseIterable {
+        case address = "Address"
+        case cloud = "Cloud"
+    }
+
+    @State private var route: Route = .address
+    @State private var host = "10.0.4.20"
+    @State private var token = ProcessInfo.processInfo.environment["BUSYBAR_TOKEN"] ?? ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Connect over HTTP").font(.caption).foregroundStyle(.secondary)
+
+            Picker("", selection: $route) {
+                ForEach(Route.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            switch route {
+            case .address:
+                TextField("10.0.4.20", text: $host)
+                    .textFieldStyle(.roundedBorder)
+                Button("Connect") {
+                    Task { await bar.connect(toHost: host, accessKey: accessKey) }
+                }
+                .disabled(host.trimmingCharacters(in: .whitespaces).isEmpty)
+            case .cloud:
+                SecureField("BAR-scope token", text: $token)
+                    .textFieldStyle(.roundedBorder)
+                Text("Set BUSYBAR_TOKEN to prefill this.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                Button("Connect") {
+                    Task { await bar.connectToCloud(token: token) }
+                }
+                .disabled(token.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
     }
 }
 

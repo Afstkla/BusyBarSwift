@@ -26,7 +26,7 @@ public struct HTTPTransport: BusyTransport {
     /// Talks to the bar through BUSY Cloud rather than over the local network.
     ///
     /// - Parameter token: a BUSY Cloud BAR-scope token, sent as `Authorization: Bearer`.
-    public init(cloudToken: String, host: String = "https://proxy.busy.app", timeout: TimeInterval = 10) {
+    public init(cloudToken: String, host: String = "https://api.busy.app", timeout: TimeInterval = 10) {
         self.baseURL = URL(string: host)!
 
         let configuration = URLSessionConfiguration.ephemeral
