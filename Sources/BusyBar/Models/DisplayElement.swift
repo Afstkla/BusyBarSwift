@@ -14,7 +14,7 @@ public enum Screen: String, Sendable, Codable {
     public var pixelWidth: Int {
         switch self {
         case .front: 72
-        case .back: 80
+        case .back: 160
         }
     }
 
@@ -25,15 +25,18 @@ public enum Screen: String, Sendable, Codable {
         }
     }
 
-    /// The front panel is full colour; the back is greyscale.
-    ///
-    /// Both were measured by drawing a single pixel at a known coordinate and reading back
-    /// where it landed in the frame `/screen` returns.
-    public var bytesPerPixel: Int {
+    /// The front is a 72×16 colour matrix at 8 bits per channel. The back is a 160×80
+    /// monochrome OLED with 16 grey levels, so two pixels share a byte.
+    public var bitsPerPixel: Int {
         switch self {
-        case .front: 3
-        case .back: 1
+        case .front: 24
+        case .back: 4
         }
+    }
+
+    /// Bytes one row of this display occupies in a frame from `/screen`.
+    public var bytesPerRow: Int {
+        pixelWidth * bitsPerPixel / 8
     }
 }
 

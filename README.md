@@ -102,6 +102,21 @@ try await bar.draw([
 ], ledNotificationColor: .green)
 ```
 
+### The two displays
+
+| | Resolution | Colour | Frame from `/screen` |
+|---|---|---|---|
+| `.front` | 72 × 16 | 24-bit RGB | 3456 bytes, 3 per pixel |
+| `.back` | 160 × 80 | monochrome OLED, 16 grey levels | 6400 bytes, 4 bits per pixel |
+
+The back packs two pixels per byte — even column in the low nibble, odd in the high one.
+`ScreenFrame` unpacks both, so `pixel(x:y:)` and `makeImage()` work the same either way.
+
+`align` names *which point of the element* you are positioning; `x`/`y` still decide where that
+point lands, and both default to `0`. `Align.anchor(on:)` gives the coordinate for an anchor —
+`.center` is `(36, 8)` on the front and `(80, 40)` on the back — and `draw(text:)` applies it
+for you.
+
 Priority decides who wins the screen. Built-in apps sit at 10 and an active BUSY session at
 90, so a draw at the default 50 is refused during a work session with HTTP 409:
 

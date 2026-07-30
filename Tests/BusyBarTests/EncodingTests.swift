@@ -136,7 +136,7 @@ struct EncodingTests {
         #expect(Align.bottomRight.anchor(on: .front) == (72, 16))
         #expect(Align.topMid.anchor(on: .front) == (36, 0))
         #expect(Align.midLeft.anchor(on: .front) == (0, 8))
-        #expect(Align.center.anchor(on: .back) == (40, 40))
+        #expect(Align.center.anchor(on: .back) == (80, 40))
     }
 
     @Test("Centred text is positioned at the middle, not hung off the corner")
@@ -155,9 +155,8 @@ struct EncodingTests {
         #expect(element["y"] as? Int == 8)
     }
 
-    @Test("Frames index correctly in colour and in greyscale")
+    @Test("Frames index correctly in colour and in packed greyscale")
     func readsScreenFrames() throws {
-        // Front: 3 bytes per pixel, so pixel (1,0) starts at byte 3.
         var front = Data(repeating: 0, count: 72 * 16 * 3)
         front[3] = 10
         front[4] = 20
@@ -165,20 +164,24 @@ struct EncodingTests {
         let colour = ScreenFrame(screen: .front, pixels: front)
 
         #expect(colour.width == 72 && colour.height == 16)
-        #expect(colour.bytesPerPixel == 3)
+        #expect(colour.isWellFormed)
         #expect(colour.pixel(x: 1, y: 0).map { [$0.red, $0.green, $0.blue] } == [10, 20, 30])
 
-        // Back: one greyscale byte per pixel, so (0,1) is byte 80 — the offset the device
-        // actually reported when a single pixel was drawn there.
+        // The back packs two pixels per byte: even column low nibble, odd column high.
+        // Byte 39 of row 79 is where the device actually lit a pixel drawn at (79, 79).
         var back = Data(repeating: 0, count: 80 * 80)
-        back[80] = 200
+        back[79 * 80 + 39] = 0xF0
+        back[79 * 80 + 20] = 0x0F
         let grey = ScreenFrame(screen: .back, pixels: back)
 
-        #expect(grey.width == 80 && grey.height == 80)
-        #expect(grey.bytesPerPixel == 1)
-        #expect(grey.pixel(x: 0, y: 1).map { [$0.red, $0.green, $0.blue] } == [200, 200, 200])
-        #expect(grey.pixel(x: 0, y: 0)?.red == 0)
-        #expect(grey.pixel(x: 80, y: 0) == nil)
+        #expect(grey.width == 160 && grey.height == 80)
+        #expect(grey.bitsPerPixel == 4)
+        #expect(grey.isWellFormed)
+        #expect(grey.pixel(x: 79, y: 79)?.red == 255)
+        #expect(grey.pixel(x: 78, y: 79)?.red == 0)
+        #expect(grey.pixel(x: 40, y: 79)?.red == 255)
+        #expect(grey.pixel(x: 41, y: 79)?.red == 0)
+        #expect(grey.pixel(x: 160, y: 0) == nil)
     }
 
     @Test("Colours parse from every hex shorthand")
